@@ -4,6 +4,10 @@
     gap: 10px;
     max-width: 900px;
     margin: 0 auto;
+    background-color: #f0f0f0;
+    padding: 20px;
+    border-radius: 12px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 }
 
 .small-board {
@@ -13,16 +17,34 @@
     padding: 5px;
     background-color: #fff;
     transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
 }
 
 .small-board.active {
     border-color: #4CAF50;
-    box-shadow: 0 0 10px rgba(76, 175, 80, 0.3);
+    box-shadow: 0 0 15px rgba(76, 175, 80, 0.4);
+    transform: scale(1.02);
 }
 
 .small-board.inactive {
     opacity: 0.7;
     pointer-events: none;
+}
+
+.small-board.winner-x {
+    background-color: rgba(231, 76, 60, 0.1);
+    border-color: #e74c3c;
+}
+
+.small-board.winner-o {
+    background-color: rgba(52, 152, 219, 0.1);
+    border-color: #3498db;
+}
+
+.small-board.winner-draw {
+    background-color: rgba(149, 165, 166, 0.1);
+    border-color: #95a5a6;
 }
 
 .board-grid {
@@ -44,10 +66,12 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    position: relative;
 }
 
 .cell:hover:not(:disabled) {
     background-color: #e8e8e8;
+    transform: scale(1.05);
 }
 
 .cell:disabled {
@@ -62,6 +86,10 @@
     color: #3498db;
 }
 
+.cell.last-move {
+    animation: pulse 1s ease-in-out;
+}
+
 .board-winner {
     display: flex;
     align-items: center;
@@ -70,11 +98,24 @@
     font-size: 3rem;
     font-weight: bold;
     color: #2c3e50;
+    animation: fadeIn 0.5s ease-in-out;
+}
+
+@keyframes pulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.1); }
+    100% { transform: scale(1); }
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
 }
 
 @media (max-width: 768px) {
     .super-board {
         gap: 5px;
+        padding: 10px;
     }
 
     .small-board {

@@ -5,22 +5,62 @@
     padding: 2rem;
     max-width: 1200px;
     margin: 0 auto;
+    min-height: 100vh;
+    background-color: #f9f9f9;
 }
 
 h1 {
-    color: #333;
+    color: #2c3e50;
     margin-bottom: 2rem;
     text-align: center;
+    font-size: 2.5rem;
+    font-weight: bold;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .status-message {
     font-size: 1.2rem;
     margin-bottom: 2rem;
-    padding: 1rem;
+    padding: 1rem 2rem;
     border-radius: 8px;
-    background-color: #f0f0f0;
+    background-color: #fff;
     text-align: center;
     min-width: 300px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    color: #2c3e50;
+    font-weight: 500;
+}
+
+.connection-status {
+    font-size: 0.9rem;
+    margin-top: 0.5rem;
+    padding: 0.3rem 0.6rem;
+    border-radius: 4px;
+    display: inline-block;
+}
+
+.connection-status:not(:empty) {
+    background-color: #f0f0f0;
+}
+
+.connection-status:contains('connected') {
+    background-color: #d4edda;
+    color: #155724;
+}
+
+.connection-status:contains('error') {
+    background-color: #f8d7da;
+    color: #721c24;
+}
+
+.connection-status:contains('disconnected') {
+    background-color: #fff3cd;
+    color: #856404;
+}
+
+.connection-status:contains('reconnected') {
+    background-color: #cce5ff;
+    color: #004085;
 }
 
 .waiting-message {
@@ -28,6 +68,11 @@ h1 {
     color: #666;
     margin: 2rem 0;
     text-align: center;
+    padding: 1rem 2rem;
+    background-color: #fff;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    animation: pulse 2s infinite;
 }
 
 .new-game-button {
@@ -39,11 +84,25 @@ h1 {
     border: none;
     border-radius: 8px;
     cursor: pointer;
-    transition: background-color 0.3s;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
 .new-game-button:hover {
     background-color: #45a049;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+.new-game-button:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+@keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.7; }
+    100% { opacity: 1; }
 }
 
 @media (max-width: 768px) {
@@ -52,11 +111,22 @@ h1 {
     }
 
     h1 {
-        font-size: 1.5rem;
+        font-size: 1.8rem;
     }
 
     .status-message {
         font-size: 1rem;
         min-width: auto;
+        padding: 0.8rem 1.5rem;
+    }
+
+    .waiting-message {
+        font-size: 1rem;
+        padding: 0.8rem 1.5rem;
+    }
+
+    .new-game-button {
+        font-size: 1rem;
+        padding: 0.8rem 1.5rem;
     }
 } 

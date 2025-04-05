@@ -4,6 +4,11 @@
     align-items: center;
     gap: 2rem;
     margin-bottom: 2rem;
+    background-color: #fff;
+    padding: 2rem;
+    border-radius: 12px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    min-width: 300px;
 }
 
 .control-button {
@@ -14,24 +19,43 @@
     cursor: pointer;
     transition: all 0.3s ease;
     min-width: 200px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 1px;
 }
 
 .find-game {
     background-color: #3498db;
     color: white;
+    box-shadow: 0 2px 4px rgba(52, 152, 219, 0.3);
 }
 
 .find-game:hover {
     background-color: #2980b9;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(52, 152, 219, 0.4);
+}
+
+.find-game:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 4px rgba(52, 152, 219, 0.3);
 }
 
 .start-ai {
     background-color: #9b59b6;
     color: white;
+    box-shadow: 0 2px 4px rgba(155, 89, 182, 0.3);
 }
 
 .start-ai:hover {
     background-color: #8e44ad;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(155, 89, 182, 0.4);
+}
+
+.start-ai:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 4px rgba(155, 89, 182, 0.3);
 }
 
 .ai-controls {
@@ -39,16 +63,20 @@
     flex-direction: column;
     align-items: center;
     gap: 1rem;
+    width: 100%;
 }
 
 .ai-controls h3 {
     margin: 0;
-    color: #333;
+    color: #2c3e50;
+    font-size: 1.2rem;
+    font-weight: 600;
 }
 
 .difficulty-buttons {
     display: flex;
     gap: 1rem;
+    margin-bottom: 1rem;
 }
 
 .difficulty-button {
@@ -58,10 +86,13 @@
     background-color: white;
     cursor: pointer;
     transition: all 0.3s ease;
+    font-weight: 500;
+    color: #666;
 }
 
 .difficulty-button:hover {
     border-color: #9b59b6;
+    color: #9b59b6;
 }
 
 .difficulty-button.active {
@@ -73,6 +104,8 @@
 @media (max-width: 768px) {
     .game-controls {
         gap: 1rem;
+        padding: 1.5rem;
+        min-width: auto;
     }
 
     .control-button {
@@ -88,5 +121,9 @@
     .difficulty-button {
         padding: 0.4rem 0.8rem;
         font-size: 0.9rem;
+    }
+
+    .ai-controls h3 {
+        font-size: 1.1rem;
     }
 } 

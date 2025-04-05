@@ -380,6 +380,41 @@ io.on('connection', (socket) => {
             }
         }
     });
+
+    // Handle rejoin game request
+    socket.on('rejoinGame', ({ gameId }) => {
+        console.log(`Player attempting to rejoin game ${gameId}`);
+        
+        // Find the game in the games map
+        const game = games.get(gameId);
+        if (!game) {
+            console.log(`Game ${gameId} not found`);
+            socket.emit('error', { message: 'Game not found' });
+            return;
+        }
+
+        // Check if the game is still active
+        if (game.status !== 'active') {
+            console.log(`Game ${gameId} is no longer active`);
+            socket.emit('error', { message: 'Game is no longer active' });
+            return;
+        }
+
+        // Add the socket to the game room
+        socket.join(gameId);
+        
+        // Send the current game state to the player
+        socket.emit('gameState', {
+            gameId: game.id,
+            board: game.board,
+            currentPlayer: game.currentPlayer,
+            status: game.status,
+            winner: game.winner,
+            lastMove: game.lastMove
+        });
+
+        console.log(`Player successfully rejoined game ${gameId}`);
+    });
 });
 
 // Serve static files from the React app in production

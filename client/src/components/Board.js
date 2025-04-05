@@ -8,12 +8,26 @@ const Board = ({ board, boardWinners, lastMove, onCellClick, disabled }) => {
         return boardIndex === lastMove.cellIndex;
     };
 
+    const getBoardClass = (boardIndex) => {
+        const baseClass = 'small-board';
+        const activeClass = isBoardActive(boardIndex) ? 'active' : 'inactive';
+        const winnerClass = boardWinners[boardIndex] ? `winner-${boardWinners[boardIndex].toLowerCase()}` : '';
+        return `${baseClass} ${activeClass} ${winnerClass}`.trim();
+    };
+
+    const getCellClass = (cell, boardIndex, cellIndex) => {
+        const baseClass = 'cell';
+        const symbolClass = cell ? `cell-${cell.toLowerCase()}` : '';
+        const lastMoveClass = lastMove && lastMove.boardIndex === boardIndex && lastMove.cellIndex === cellIndex ? 'last-move' : '';
+        return `${baseClass} ${symbolClass} ${lastMoveClass}`.trim();
+    };
+
     return (
         <div className="super-board">
             {board.map((smallBoard, boardIndex) => (
                 <div
                     key={boardIndex}
-                    className={`small-board ${isBoardActive(boardIndex) ? 'active' : 'inactive'}`}
+                    className={getBoardClass(boardIndex)}
                 >
                     {boardWinners[boardIndex] ? (
                         <div className="board-winner">
@@ -24,7 +38,7 @@ const Board = ({ board, boardWinners, lastMove, onCellClick, disabled }) => {
                             {smallBoard.map((cell, cellIndex) => (
                                 <button
                                     key={cellIndex}
-                                    className={`cell ${cell ? `cell-${cell.toLowerCase()}` : ''}`}
+                                    className={getCellClass(cell, boardIndex, cellIndex)}
                                     onClick={() => onCellClick(boardIndex, cellIndex)}
                                     disabled={disabled || !isBoardActive(boardIndex) || cell !== ''}
                                 >
