@@ -15,7 +15,7 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
     cors: {
-        origin: [process.env.CLIENT_URL, "http://localhost:3000"],
+        origin: process.env.CLIENT_URL || "http://localhost:3000",
         methods: ["GET", "POST"],
         credentials: true
     }
@@ -23,7 +23,7 @@ const io = new Server(server, {
 
 // Middleware
 app.use(cors({
-    origin: [process.env.CLIENT_URL, "http://localhost:3000"],
+    origin: process.env.CLIENT_URL || "http://localhost:3000",
     credentials: true
 }));
 app.use(helmet());
@@ -247,7 +247,7 @@ async function loadGameState(gameId) {
 
 // Socket.IO connection handling
 io.on('connection', (socket) => {
-    console.log('User connected:', socket.id);
+    console.log('New client connected:', socket.id);
 
     socket.on('reconnectToGame', async ({ gameId }) => {
         try {
@@ -417,28 +417,18 @@ io.on('connection', (socket) => {
     });
 });
 
-// Serve static files from the React app in production
-if (process.env.NODE_ENV === 'production') {
-    app.use(express.static(path.join(__dirname, 'client/build')));
-}
+// Serve static files from the React app
+app.use(express.static(path.join(__dirname, 'client/build')));
 
 // API Routes
 app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Serve the React app for all other routes in production
-if (process.env.NODE_ENV === 'production') {
-    app.get('*', (req, res) => {
-        res.sendFile(path.join(__dirname, 'client/build', 'index.html'));
-    });
-} else {
-    // In development, serve the public directory
-    app.use(express.static(path.join(__dirname, 'public')));
-    app.get('*', (req, res) => {
-        res.sendFile(path.join(__dirname, 'public', 'index.html'));
-    });
-}
+// Handle React routing, return all requests to React app
+app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, 'client/build', 'index.html'));
+});
 
 // Error handling middleware
 app.use((err, req, res, next) => {
@@ -447,7 +437,7 @@ app.use((err, req, res, next) => {
 });
 
 // Start the server
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+    console.log(`Server is running on port ${PORT}`);
 });
