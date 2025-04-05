@@ -20,6 +20,7 @@ const Game = () => {
             reconnection: true,
             reconnectionAttempts: 5,
             reconnectionDelay: 1000,
+            timeout: 10000
         });
         
         setSocket(newSocket);
@@ -28,6 +29,14 @@ const Game = () => {
         newSocket.on('connect', () => {
             console.log('Socket connected successfully');
             setConnectionStatus('connected');
+            setMessage('Connected to server');
+            
+            // Check for saved game on initial connection
+            const savedGameId = localStorage.getItem('gameId');
+            if (savedGameId) {
+                setIsReconnecting(true);
+                reconnectToGame(savedGameId);
+            }
         });
 
         newSocket.on('connect_error', (error) => {
@@ -46,16 +55,33 @@ const Game = () => {
             console.log('Socket reconnected after', attemptNumber, 'attempts');
             setConnectionStatus('reconnected');
             setMessage(`Reconnected after ${attemptNumber} attempts`);
+            
+            // Attempt to rejoin the game if we were in one
+            const savedGameId = localStorage.getItem('gameId');
+            if (savedGameId) {
+                reconnectToGame(savedGameId);
+            }
         });
 
-        // Check for saved game
-        const savedGameId = localStorage.getItem('gameId');
-        if (savedGameId) {
-            setIsReconnecting(true);
-            reconnectToGame(savedGameId);
-        }
+        newSocket.on('reconnect_attempt', (attemptNumber) => {
+            console.log('Reconnection attempt', attemptNumber);
+            setConnectionStatus('reconnecting');
+            setMessage(`Reconnecting... Attempt ${attemptNumber}`);
+        });
 
-        // Socket event listeners
+        newSocket.on('reconnect_error', (error) => {
+            console.error('Reconnection error:', error);
+            setConnectionStatus('error');
+            setMessage(`Reconnection error: ${error.message}`);
+        });
+
+        newSocket.on('reconnect_failed', () => {
+            console.error('Failed to reconnect');
+            setConnectionStatus('error');
+            setMessage('Failed to reconnect - Please refresh the page');
+        });
+
+        // Game event handlers
         newSocket.on('gameStart', ({ gameId, symbol, opponent }) => {
             setGameId(gameId);
             setPlayerSymbol(symbol);
@@ -71,10 +97,12 @@ const Game = () => {
             setIsReconnecting(false);
         });
 
-        newSocket.on('gameState', (gameState) => {
-            setGameState(gameState);
+        newSocket.on('gameState', (state) => {
+            setGameState(state);
             setStatus('playing');
             setIsReconnecting(false);
+            setConnectionStatus('connected');
+            setMessage('Game in progress');
         });
 
         newSocket.on('gameOver', ({ winner }) => {
@@ -91,11 +119,13 @@ const Game = () => {
             setIsReconnecting(false);
         });
 
-        newSocket.on('gameNotFound', () => {
-            setStatus('idle');
-            setMessage('Game not found');
-            localStorage.removeItem('gameId');
-            setIsReconnecting(false);
+        newSocket.on('error', ({ message }) => {
+            setMessage(message);
+            if (message.includes('not found') || message.includes('no longer active')) {
+                localStorage.removeItem('gameId');
+                setIsReconnecting(false);
+                setStatus('idle');
+            }
         });
 
         return () => {
@@ -104,7 +134,9 @@ const Game = () => {
     }, []);
 
     const reconnectToGame = (savedGameId) => {
-        socket?.emit('reconnectToGame', { gameId: savedGameId });
+        if (socket) {
+            socket.emit('rejoinGame', { gameId: savedGameId });
+        }
     };
 
     const findGame = () => {
@@ -140,6 +172,13 @@ const Game = () => {
     return (
         <div className="game-container">
             <h1>Super Tic Tac Toe</h1>
+            <div className={`connection-status ${connectionStatus}`}>
+                {connectionStatus === 'connected' && 'Connected'}
+                {connectionStatus === 'disconnected' && 'Disconnected'}
+                {connectionStatus === 'error' && 'Connection Error'}
+                {connectionStatus === 'reconnecting' && 'Reconnecting...'}
+                {connectionStatus === 'reconnected' && 'Reconnected'}
+            </div>
             <div className="status-message">{message}</div>
             
             {status === 'idle' && (
