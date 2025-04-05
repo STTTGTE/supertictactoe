@@ -1,0 +1,92 @@
+.game-controls {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2rem;
+    margin-bottom: 2rem;
+}
+
+.control-button {
+    padding: 1rem 2rem;
+    font-size: 1.2rem;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    min-width: 200px;
+}
+
+.find-game {
+    background-color: #3498db;
+    color: white;
+}
+
+.find-game:hover {
+    background-color: #2980b9;
+}
+
+.start-ai {
+    background-color: #9b59b6;
+    color: white;
+}
+
+.start-ai:hover {
+    background-color: #8e44ad;
+}
+
+.ai-controls {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+}
+
+.ai-controls h3 {
+    margin: 0;
+    color: #333;
+}
+
+.difficulty-buttons {
+    display: flex;
+    gap: 1rem;
+}
+
+.difficulty-button {
+    padding: 0.5rem 1rem;
+    border: 2px solid #ddd;
+    border-radius: 4px;
+    background-color: white;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.difficulty-button:hover {
+    border-color: #9b59b6;
+}
+
+.difficulty-button.active {
+    background-color: #9b59b6;
+    border-color: #9b59b6;
+    color: white;
+}
+
+@media (max-width: 768px) {
+    .game-controls {
+        gap: 1rem;
+    }
+
+    .control-button {
+        font-size: 1rem;
+        padding: 0.8rem 1.5rem;
+        min-width: 150px;
+    }
+
+    .difficulty-buttons {
+        gap: 0.5rem;
+    }
+
+    .difficulty-button {
+        padding: 0.4rem 0.8rem;
+        font-size: 0.9rem;
+    }
+} 

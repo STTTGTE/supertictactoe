@@ -26,7 +26,6 @@ app.use(helmet());
 app.use(compression());
 app.use(morgan('dev'));
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
 
 // Initialize Supabase client
 const supabaseUrl = process.env.SUPABASE_URL;
@@ -375,15 +374,28 @@ io.on('connection', (socket) => {
     });
 });
 
+// Serve static files from the React app in production
+if (process.env.NODE_ENV === 'production') {
+    app.use(express.static(path.join(__dirname, 'client/build')));
+}
+
 // API Routes
 app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Serve the frontend
-app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
+// Serve the React app for all other routes in production
+if (process.env.NODE_ENV === 'production') {
+    app.get('*', (req, res) => {
+        res.sendFile(path.join(__dirname, 'client/build', 'index.html'));
+    });
+} else {
+    // In development, serve the public directory
+    app.use(express.static(path.join(__dirname, 'public')));
+    app.get('*', (req, res) => {
+        res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    });
+}
 
 // Error handling middleware
 app.use((err, req, res, next) => {
