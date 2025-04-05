@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Super Tic Tac Toe Online</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div class="hero">
+        <div class="container">
+            <nav class="navbar">
+                <div class="logo">Super TTT</div>
+                <div class="streak-counter">
+                    <i class="fas fa-fire"></i>
+                    <span id="streak-count">0</span> day streak
+                </div>
+            </nav>
+            
+            <div class="hero-content">
+                <h1>Super Tic Tac Toe Online</h1>
+                <p class="tagline">Challenge yourself, improve your strategy, and maintain your winning streak!</p>
+                
+                <div id="game-status" class="status">Choose your game mode</div>
+                
+                <div id="menu" class="menu">
+                    <button id="find-game" class="menu-button primary-btn">
+                        <i class="fas fa-globe"></i> Play Online
+                    </button>
+                    <button id="play-ai" class="menu-button secondary-btn">
+                        <i class="fas fa-robot"></i> Play vs AI
+                    </button>
+                    
+                    <div class="ai-options">
+                        <label for="ai-difficulty">Select AI Difficulty:</label>
+                        <select id="ai-difficulty" class="ai-select" aria-label="AI Difficulty Level">
+                            <option value="easy">Easy - Learning the Basics</option>
+                            <option value="medium">Medium - Strategic Thinking</option>
+                            <option value="hard">Hard - Advanced Tactics</option>
+                            <option value="expert">Expert - Grandmaster Level</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="ai-levels-section">
+        <div class="container">
+            <h2>AI Difficulty Levels</h2>
+            <div class="level-cards">
+                <div class="level-card">
+                    <i class="fas fa-baby"></i>
+                    <h3>Easy</h3>
+                    <p>Perfect for beginners! Learn the basic rules and develop fundamental strategies.</p>
+                </div>
+                <div class="level-card">
+                    <i class="fas fa-user"></i>
+                    <h3>Medium</h3>
+                    <p>Challenge yourself with an AI that thinks ahead and blocks basic winning moves.</p>
+                </div>
+                <div class="level-card">
+                    <i class="fas fa-chess-knight"></i>
+                    <h3>Hard</h3>
+                    <p>Face an AI that uses advanced strategies and learns from your gameplay patterns.</p>
+                </div>
+                <div class="level-card">
+                    <i class="fas fa-crown"></i>
+                    <h3>Expert</h3>
+                    <p>Test your skills against our most powerful AI with masterful gameplay and perfect strategy.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="game-section hidden">
+        <div class="container">
+            <div id="game-container">
+                <div id="super-board" class="super-board"></div>
+                <div id="player-info" class="player-info">
+                    <span>You are: <span id="player-symbol"></span></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
