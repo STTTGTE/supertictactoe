@@ -15,13 +15,17 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
     cors: {
-        origin: process.env.CLIENT_URL || "http://localhost:3000",
-        methods: ["GET", "POST"]
+        origin: [process.env.CLIENT_URL, "http://localhost:3000"],
+        methods: ["GET", "POST"],
+        credentials: true
     }
 });
 
 // Middleware
-app.use(cors());
+app.use(cors({
+    origin: [process.env.CLIENT_URL, "http://localhost:3000"],
+    credentials: true
+}));
 app.use(helmet());
 app.use(compression());
 app.use(morgan('dev'));
@@ -55,7 +59,6 @@ class AIPlayer {
     getRandomMove(game) {
         const availableMoves = [];
         
-        // If there's a last move and its board isn't won, we must play in that board
         if (game.lastMove && !game.boardWinners[game.lastMove.cellIndex]) {
             for (let i = 0; i < 9; i++) {
                 if (game.board[game.lastMove.cellIndex][i] === '') {
@@ -63,7 +66,6 @@ class AIPlayer {
                 }
             }
         } else {
-            // Otherwise, we can play in any available board
             for (let boardIndex = 0; boardIndex < 9; boardIndex++) {
                 if (!game.boardWinners[boardIndex]) {
                     for (let cellIndex = 0; cellIndex < 9; cellIndex++) {
@@ -80,26 +82,26 @@ class AIPlayer {
     }
 
     getBestMove(game) {
-        // First, check if we can win in the current board
         if (game.lastMove && !game.boardWinners[game.lastMove.cellIndex]) {
             const winningMove = this.findWinningMove(game, game.lastMove.cellIndex, 'O');
             if (winningMove) return winningMove;
             
-            // Block opponent's winning move
             const blockingMove = this.findWinningMove(game, game.lastMove.cellIndex, 'X');
             if (blockingMove) return blockingMove;
+            
+            const strategicMove = this.getStrategicMove(game);
+            if (strategicMove) return strategicMove;
         }
         
-        // If no immediate win/block, try to find the best strategic move
-        return this.getStrategicMove(game);
+        return this.getRandomMove(game);
     }
 
     findWinningMove(game, boardIndex, symbol) {
         const board = game.board[boardIndex];
         const lines = [
-            [0, 1, 2], [3, 4, 5], [6, 7, 8], // rows
-            [0, 3, 6], [1, 4, 7], [2, 5, 8], // columns
-            [0, 4, 8], [2, 4, 6] // diagonals
+            [0, 1, 2], [3, 4, 5], [6, 7, 8],
+            [0, 3, 6], [1, 4, 7], [2, 5, 8],
+            [0, 4, 8], [2, 4, 6]
         ];
         
         for (const line of lines) {
@@ -117,23 +119,29 @@ class AIPlayer {
     }
 
     getStrategicMove(game) {
-        // Try to take center of a board if available
-        if (game.lastMove && !game.boardWinners[game.lastMove.cellIndex] && game.board[game.lastMove.cellIndex][4] === '') {
-            return { boardIndex: game.lastMove.cellIndex, cellIndex: 4 };
-        }
-        
-        // Try to take corners
-        const corners = [0, 2, 6, 8];
         if (game.lastMove && !game.boardWinners[game.lastMove.cellIndex]) {
+            const board = game.board[game.lastMove.cellIndex];
+            
+            if (board[4] === '') {
+                return { boardIndex: game.lastMove.cellIndex, cellIndex: 4 };
+            }
+            
+            const corners = [0, 2, 6, 8];
             for (const corner of corners) {
-                if (game.board[game.lastMove.cellIndex][corner] === '') {
+                if (board[corner] === '') {
                     return { boardIndex: game.lastMove.cellIndex, cellIndex: corner };
+                }
+            }
+            
+            const edges = [1, 3, 5, 7];
+            for (const edge of edges) {
+                if (board[edge] === '') {
+                    return { boardIndex: game.lastMove.cellIndex, cellIndex: edge };
                 }
             }
         }
         
-        // If no strategic move found, return a random move
-        return this.getRandomMove(game);
+        return null;
     }
 }
 
