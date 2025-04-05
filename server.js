@@ -1,183 +1,249 @@
-const express = require('express');
-const app = express();
-const http = require('http').createServer(app);
-const io = require('socket.io')(http);
-const supabase = require('./supabase');
 require('dotenv').config();
+const express = require('express');
+const http = require('http');
+const { Server } = require('socket.io');
+const { createClient } = require('@supabase/supabase-js');
+const cors = require('cors');
+const helmet = require('helmet');
+const compression = require('compression');
+const morgan = require('morgan');
+const path = require('path');
+const supabase = require('./supabase');
 
-app.use(express.static('./'));
+// Initialize Express app
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server, {
+    cors: {
+        origin: process.env.CLIENT_URL || "http://localhost:3000",
+        methods: ["GET", "POST"]
+    }
+});
 
+// Middleware
+app.use(cors());
+app.use(helmet());
+app.use(compression());
+app.use(morgan('dev'));
+app.use(express.json());
+app.use(express.static(path.join(__dirname, 'public')));
+
+// Initialize Supabase client
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_KEY;
+const supabaseClient = createClient(supabaseUrl, supabaseKey);
+
+// Game state management
 const games = new Map();
 const waitingPlayers = new Map();
 
-// Function to save game state to Supabase
-async function saveGameState(gameId, gameState) {
-  try {
-    const { data, error } = await supabase
-      .from('games')
-      .upsert({
-        id: gameId,
-        state: gameState,
-        updated_at: new Date().toISOString()
-      });
-
-    if (error) {
-      console.error('Error saving game state:', error);
-    }
-  } catch (error) {
-    console.error('Error in saveGameState:', error);
-  }
-}
-
-// Function to load game state from Supabase
-async function loadGameState(gameId) {
-  try {
-    const { data, error } = await supabase
-      .from('games')
-      .select('state')
-      .eq('id', gameId)
-      .single();
-
-    if (error) {
-      console.error('Error loading game state:', error);
-      return null;
-    }
-
-    return data?.state || null;
-  } catch (error) {
-    console.error('Error in loadGameState:', error);
-    return null;
-  }
-}
-
+// AI Player class
 class AIPlayer {
     constructor(difficulty = 'hard') {
         this.difficulty = difficulty;
     }
 
-    getMove(game, boardIndex) {
-        const validMoves = this.getValidMoves(game, boardIndex);
-        if (validMoves.length === 0) return null;
-
-        if (this.difficulty === 'expert') {
-            return this.getExpertMove(game, validMoves);
+    getMove(game, lastMove) {
+        if (this.difficulty === 'easy') {
+            return this.getRandomMove(game);
+        } else if (this.difficulty === 'medium') {
+            return Math.random() < 0.7 ? this.getBestMove(game) : this.getRandomMove(game);
+        } else {
+            return this.getBestMove(game);
         }
-        return this.getHardMove(game, validMoves);
     }
 
-    getValidMoves(game, forcedBoardIndex) {
-        const moves = [];
-        const validBoards = forcedBoardIndex === null || game.boardWinners[forcedBoardIndex] 
-            ? Array.from({ length: 9 }, (_, i) => i).filter(i => !game.boardWinners[i])
-            : [forcedBoardIndex];
-
-        for (const boardIndex of validBoards) {
-            for (let cellIndex = 0; cellIndex < 9; cellIndex++) {
-                if (!game.board[boardIndex][cellIndex]) {
-                    moves.push({ boardIndex, cellIndex });
+    getRandomMove(game) {
+        const availableMoves = [];
+        
+        // If there's a last move and its board isn't won, we must play in that board
+        if (game.lastMove && !game.boardWinners[game.lastMove.cellIndex]) {
+            for (let i = 0; i < 9; i++) {
+                if (game.board[game.lastMove.cellIndex][i] === '') {
+                    availableMoves.push({ boardIndex: game.lastMove.cellIndex, cellIndex: i });
+                }
+            }
+        } else {
+            // Otherwise, we can play in any available board
+            for (let boardIndex = 0; boardIndex < 9; boardIndex++) {
+                if (!game.boardWinners[boardIndex]) {
+                    for (let cellIndex = 0; cellIndex < 9; cellIndex++) {
+                        if (game.board[boardIndex][cellIndex] === '') {
+                            availableMoves.push({ boardIndex, cellIndex });
+                        }
+                    }
                 }
             }
         }
-        return moves;
-    }
-
-    getHardMove(game, validMoves) {
-        // Prioritize winning moves in local boards
-        for (const move of validMoves) {
-            const { boardIndex, cellIndex } = move;
-            if (this.willWinLocalBoard(game.board[boardIndex], cellIndex, 'O')) {
-                return move;
-            }
-        }
-
-        // Block opponent's winning moves
-        for (const move of validMoves) {
-            const { boardIndex, cellIndex } = move;
-            if (this.willWinLocalBoard(game.board[boardIndex], cellIndex, 'X')) {
-                return move;
-            }
-        }
-
-        // Prioritize center and corners of available boards
-        const strategicPositions = [4, 0, 2, 6, 8, 1, 3, 5, 7];
-        for (const pos of strategicPositions) {
-            const move = validMoves.find(m => m.cellIndex === pos);
-            if (move) return move;
-        }
-
-        return validMoves[Math.floor(Math.random() * validMoves.length)];
-    }
-
-    getExpertMove(game, validMoves) {
-        // First, try to find a move that leads to winning the entire game
-        for (const move of validMoves) {
-            if (this.willLeadToSuperWin(game, move, 'O')) {
-                return move;
-            }
-        }
-
-        // Block opponent's potential super win
-        for (const move of validMoves) {
-            if (this.willLeadToSuperWin(game, move, 'X')) {
-                return move;
-            }
-        }
-
-        // Use hard strategy as fallback
-        return this.getHardMove(game, validMoves);
-    }
-
-    willWinLocalBoard(board, position, symbol) {
-        const tempBoard = [...board];
-        tempBoard[position] = symbol;
         
-        const winPatterns = [
-            [0, 1, 2], [3, 4, 5], [6, 7, 8],
-            [0, 3, 6], [1, 4, 7], [2, 5, 8],
-            [0, 4, 8], [2, 4, 6]
-        ];
-
-        return winPatterns.some(pattern => 
-            pattern.every(pos => tempBoard[pos] === symbol)
-        );
+        if (availableMoves.length === 0) return null;
+        return availableMoves[Math.floor(Math.random() * availableMoves.length)];
     }
 
-    willLeadToSuperWin(game, move, symbol) {
-        // Create a deep copy of the game state
-        const tempGame = {
-            board: game.board.map(board => [...board]),
-            boardWinners: [...game.boardWinners]
-        };
-
-        // Apply the move
-        tempGame.board[move.boardIndex][move.cellIndex] = symbol;
-
-        // Check if this creates a win in the local board
-        if (this.willWinLocalBoard(tempGame.board[move.boardIndex], move.cellIndex, symbol)) {
-            tempGame.boardWinners[move.boardIndex] = symbol;
-
-            // Check if this leads to winning the super board
-            const winPatterns = [
-                [0, 1, 2], [3, 4, 5], [6, 7, 8],
-                [0, 3, 6], [1, 4, 7], [2, 5, 8],
-                [0, 4, 8], [2, 4, 6]
-            ];
-
-            return winPatterns.some(pattern =>
-                pattern.every(pos => tempGame.boardWinners[pos] === symbol)
-            );
+    getBestMove(game) {
+        // First, check if we can win in the current board
+        if (game.lastMove && !game.boardWinners[game.lastMove.cellIndex]) {
+            const winningMove = this.findWinningMove(game, game.lastMove.cellIndex, 'O');
+            if (winningMove) return winningMove;
+            
+            // Block opponent's winning move
+            const blockingMove = this.findWinningMove(game, game.lastMove.cellIndex, 'X');
+            if (blockingMove) return blockingMove;
         }
+        
+        // If no immediate win/block, try to find the best strategic move
+        return this.getStrategicMove(game);
+    }
 
-        return false;
+    findWinningMove(game, boardIndex, symbol) {
+        const board = game.board[boardIndex];
+        const lines = [
+            [0, 1, 2], [3, 4, 5], [6, 7, 8], // rows
+            [0, 3, 6], [1, 4, 7], [2, 5, 8], // columns
+            [0, 4, 8], [2, 4, 6] // diagonals
+        ];
+        
+        for (const line of lines) {
+            const [a, b, c] = line;
+            const count = [board[a], board[b], board[c]].filter(cell => cell === symbol).length;
+            const empty = [board[a], board[b], board[c]].filter(cell => cell === '').length;
+            
+            if (count === 2 && empty === 1) {
+                const emptyIndex = line[board[a] === '' ? 0 : board[b] === '' ? 1 : 2];
+                return { boardIndex, cellIndex: emptyIndex };
+            }
+        }
+        
+        return null;
+    }
+
+    getStrategicMove(game) {
+        // Try to take center of a board if available
+        if (game.lastMove && !game.boardWinners[game.lastMove.cellIndex] && game.board[game.lastMove.cellIndex][4] === '') {
+            return { boardIndex: game.lastMove.cellIndex, cellIndex: 4 };
+        }
+        
+        // Try to take corners
+        const corners = [0, 2, 6, 8];
+        if (game.lastMove && !game.boardWinners[game.lastMove.cellIndex]) {
+            for (const corner of corners) {
+                if (game.board[game.lastMove.cellIndex][corner] === '') {
+                    return { boardIndex: game.lastMove.cellIndex, cellIndex: corner };
+                }
+            }
+        }
+        
+        // If no strategic move found, return a random move
+        return this.getRandomMove(game);
     }
 }
 
+// Helper functions
+function isValidMove(game, boardIndex, cellIndex) {
+    if (game.gameOver) return false;
+    if (game.boardWinners[boardIndex]) return false;
+    if (game.board[boardIndex][cellIndex] !== '') return false;
+    
+    if (game.lastMove) {
+        if (game.boardWinners[game.lastMove.cellIndex]) {
+            return true;
+        }
+        return boardIndex === game.lastMove.cellIndex;
+    }
+    
+    return true;
+}
+
+async function makeMove(game, boardIndex, cellIndex) {
+    const playerIndex = game.currentPlayer;
+    const symbol = playerIndex === 0 ? 'X' : 'O';
+    
+    game.board[boardIndex][cellIndex] = symbol;
+    game.lastMove = { boardIndex, cellIndex };
+    
+    // Check if the current board is won
+    if (checkBoardWin(game.board[boardIndex], symbol)) {
+        game.boardWinners[boardIndex] = symbol;
+        
+        // Check if the game is won
+        if (checkBoardWin(game.boardWinners, symbol)) {
+            game.gameOver = true;
+            game.winner = symbol;
+            io.to(game.id).emit('gameOver', { winner: symbol });
+            return;
+        }
+    }
+    
+    // Check for draw in the current board
+    if (game.board[boardIndex].every(cell => cell !== '')) {
+        game.boardWinners[boardIndex] = 'draw';
+        
+        // Check for overall game draw
+        if (game.boardWinners.every(board => board !== '')) {
+            game.gameOver = true;
+            game.winner = 'draw';
+            io.to(game.id).emit('gameOver', { winner: 'draw' });
+            return;
+        }
+    }
+    
+    game.currentPlayer = (playerIndex + 1) % 2;
+    io.to(game.id).emit('gameState', game);
+    
+    // Save game state to Supabase
+    await saveGameState(game.id, game);
+}
+
+function checkBoardWin(board, symbol) {
+    const lines = [
+        [0, 1, 2], [3, 4, 5], [6, 7, 8], // rows
+        [0, 3, 6], [1, 4, 7], [2, 5, 8], // columns
+        [0, 4, 8], [2, 4, 6] // diagonals
+    ];
+    
+    return lines.some(line => 
+        line.every(index => board[index] === symbol)
+    );
+}
+
+async function saveGameState(gameId, gameState) {
+    try {
+        const { error } = await supabaseClient
+            .from('games')
+            .upsert({
+                id: gameId,
+                state: gameState,
+                updated_at: new Date().toISOString()
+            });
+            
+        if (error) throw error;
+    } catch (error) {
+        console.error('Error saving game state:', error);
+    }
+}
+
+async function loadGameState(gameId) {
+    try {
+        const { data, error } = await supabaseClient
+            .from('games')
+            .select('state')
+            .eq('id', gameId)
+            .single();
+            
+        if (error) throw error;
+        return data?.state || null;
+    } catch (error) {
+        console.error('Error loading game state:', error);
+        return null;
+    }
+}
+
+// Socket.IO connection handling
 io.on('connection', (socket) => {
     console.log('User connected:', socket.id);
 
     socket.on('reconnectToGame', async ({ gameId }) => {
         try {
-            // Try to load game state from Supabase
             const savedState = await loadGameState(gameId);
             
             if (!savedState) {
@@ -185,33 +251,25 @@ io.on('connection', (socket) => {
                 return;
             }
             
-            // Check if the game is already over
             if (savedState.gameOver) {
                 socket.emit('gameNotFound');
                 return;
             }
             
-            // Reconstruct the game state with AI player if needed
             if (savedState.players[1] === 'AI') {
                 savedState.ai = new AIPlayer(savedState.ai?.difficulty || 'hard');
             }
             
-            // Add the game to the in-memory map
             games.set(gameId, savedState);
-            
-            // Join the socket room
             socket.join(gameId);
             
-            // Determine the player's symbol
             const playerIndex = savedState.players.indexOf(socket.id);
             if (playerIndex === -1) {
-                // If the player is not in the game, they might be a spectator
                 socket.emit('gameState', { 
                     gameState: savedState,
                     symbol: null
                 });
             } else {
-                // Send the game state to the player
                 socket.emit('gameState', { 
                     gameState: savedState,
                     symbol: playerIndex === 0 ? 'X' : 'O'
@@ -241,8 +299,6 @@ io.on('connection', (socket) => {
             };
             
             games.set(gameId, gameState);
-            
-            // Save game state to Supabase
             await saveGameState(gameId, gameState);
 
             waitingSocket.join(gameId);
@@ -269,8 +325,6 @@ io.on('connection', (socket) => {
         };
         
         games.set(gameId, gameState);
-        
-        // Save game state to Supabase
         await saveGameState(gameId, gameState);
 
         socket.join(gameId);
@@ -278,11 +332,9 @@ io.on('connection', (socket) => {
     });
 
     socket.on('move', async ({ gameId, boardIndex, cellIndex }) => {
-        // Try to load game state from Supabase if not in memory
         if (!games.has(gameId)) {
             const savedState = await loadGameState(gameId);
             if (savedState) {
-                // Reconstruct the game state with AI player if needed
                 if (savedState.players[1] === 'AI') {
                     savedState.ai = new AIPlayer(savedState.ai?.difficulty || 'hard');
                 }
@@ -300,12 +352,9 @@ io.on('connection', (socket) => {
 
         await makeMove(game, boardIndex, cellIndex);
 
-        // Handle AI move after the player's move has been processed
         if (game.players[1] === 'AI' && !game.gameOver) {
-            // Use a more reliable approach for AI moves
             const aiMove = game.ai.getMove(game, game.lastMove);
             if (aiMove) {
-                // Make the AI move directly instead of using setTimeout
                 await makeMove(game, aiMove.boardIndex, aiMove.cellIndex);
             }
         }
@@ -319,111 +368,31 @@ io.on('connection', (socket) => {
         for (const [gameId, game] of games.entries()) {
             if (game.players.includes(socket.id)) {
                 io.to(gameId).emit('playerLeft');
-                
-                // Save final game state before removing from memory
                 await saveGameState(gameId, game);
-                
                 games.delete(gameId);
             }
         }
     });
 });
 
-async function makeMove(game, boardIndex, cellIndex) {
-    const symbol = game.currentPlayer === 0 ? 'X' : 'O';
-    game.board[boardIndex][cellIndex] = symbol;
-    game.lastMove = cellIndex;
+// API Routes
+app.get('/api/health', (req, res) => {
+    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
 
-    checkLocalWin(game, boardIndex);
-    const gameWon = checkSuperWin(game);
-    
-    // Check for draw condition - all boards are completed
-    const isDraw = game.boardWinners.every(winner => winner !== '');
+// Serve the frontend
+app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
 
-    if (!gameWon && !isDraw) {
-        game.currentPlayer = 1 - game.currentPlayer;
-    } else {
-        game.gameOver = true;
-    }
+// Error handling middleware
+app.use((err, req, res, next) => {
+    console.error(err.stack);
+    res.status(500).json({ error: 'Something went wrong!' });
+});
 
-    // Save game state to Supabase
-    await saveGameState(game.gameId, game);
-
-    // Send moveUpdate to both players
-    game.players.forEach(playerId => {
-        if (playerId !== 'AI') {
-            io.to(playerId).emit('moveUpdate', {
-                boardIndex,
-                cellIndex,
-                symbol,
-                boardWinners: game.boardWinners,
-                nextPlayer: game.players[game.currentPlayer],
-                gameWon: gameWon ? gameWon : (isDraw ? 'T' : null)
-            });
-        }
-    });
-}
-
-function isValidMove(game, boardIndex, cellIndex) {
-    if (game.board[boardIndex][cellIndex] || game.boardWinners[boardIndex]) {
-        return false;
-    }
-
-    if (game.lastMove === null) {
-        return true;
-    }
-
-    if (game.boardWinners[game.lastMove]) {
-        return true;
-    }
-
-    return boardIndex === game.lastMove;
-}
-
-function checkLocalWin(game, boardIndex) {
-    const winPatterns = [
-        [0, 1, 2], [3, 4, 5], [6, 7, 8],
-        [0, 3, 6], [1, 4, 7], [2, 5, 8],
-        [0, 4, 8], [2, 4, 6]
-    ];
-
-    const board = game.board[boardIndex];
-    for (const pattern of winPatterns) {
-        if (board[pattern[0]] &&
-            board[pattern[0]] === board[pattern[1]] &&
-            board[pattern[0]] === board[pattern[2]]) {
-            game.boardWinners[boardIndex] = board[pattern[0]];
-            return true;
-        }
-    }
-
-    if (board.every(cell => cell !== '')) {
-        game.boardWinners[boardIndex] = 'T';
-    }
-
-    return false;
-}
-
-function checkSuperWin(game) {
-    const winPatterns = [
-        [0, 1, 2], [3, 4, 5], [6, 7, 8],
-        [0, 3, 6], [1, 4, 7], [2, 5, 8],
-        [0, 4, 8], [2, 4, 6]
-    ];
-
-    for (const pattern of winPatterns) {
-        if (game.boardWinners[pattern[0]] &&
-            game.boardWinners[pattern[0]] !== 'T' &&
-            game.boardWinners[pattern[0]] === game.boardWinners[pattern[1]] &&
-            game.boardWinners[pattern[0]] === game.boardWinners[pattern[2]]) {
-            return game.boardWinners[pattern[0]];
-        }
-    }
-
-    return null;
-}
-
+// Start the server
 const PORT = process.env.PORT || 3000;
-http.listen(PORT, () => {
+server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 });
