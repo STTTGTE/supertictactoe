@@ -1,17 +1,27 @@
 import React, { useState, useEffect } from 'react';
-import { io } from 'socket.io-client';
+import { io, Socket } from 'socket.io-client';
 import Board from './Board';
 import '../styles/Game.css';
+import { 
+  GameState, 
+  PlayerSymbol, 
+  GameStatus, 
+  ConnectionStatus, 
+  AIDifficulty,
+  GameStartEvent,
+  GameOverEvent,
+  ErrorEvent
+} from '../types/game';
 
-const Game = () => {
-    const [socket, setSocket] = useState(null);
-    const [gameState, setGameState] = useState(null);
-    const [playerSymbol, setPlayerSymbol] = useState(null);
-    const [gameId, setGameId] = useState(null);
-    const [status, setStatus] = useState('idle');
-    const [message, setMessage] = useState('');
-    const [isReconnecting, setIsReconnecting] = useState(false);
-    const [connectionStatus, setConnectionStatus] = useState('disconnected');
+const Game: React.FC = () => {
+    const [socket, setSocket] = useState<Socket | null>(null);
+    const [gameState, setGameState] = useState<GameState | null>(null);
+    const [playerSymbol, setPlayerSymbol] = useState<PlayerSymbol | null>(null);
+    const [gameId, setGameId] = useState<string | null>(null);
+    const [status, setStatus] = useState<GameStatus>('idle');
+    const [message, setMessage] = useState<string>('');
+    const [isReconnecting, setIsReconnecting] = useState<boolean>(false);
+    const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected');
 
     useEffect(() => {
         const newSocket = io('http://localhost:3001', {
@@ -38,19 +48,19 @@ const Game = () => {
             }
         });
 
-        newSocket.on('connect_error', (error) => {
+        newSocket.on('connect_error', (error: Error) => {
             console.error('Socket connection error:', error);
             setConnectionStatus('error');
             setMessage(`Connection error: ${error.message}`);
         });
 
-        newSocket.on('disconnect', (reason) => {
+        newSocket.on('disconnect', (reason: string) => {
             console.log('Socket disconnected:', reason);
             setConnectionStatus('disconnected');
             setMessage(`Disconnected: ${reason}`);
         });
 
-        newSocket.on('reconnect', (attemptNumber) => {
+        newSocket.on('reconnect', (attemptNumber: number) => {
             console.log('Socket reconnected after', attemptNumber, 'attempts');
             setConnectionStatus('reconnected');
             setMessage(`Reconnected after ${attemptNumber} attempts`);
@@ -62,13 +72,13 @@ const Game = () => {
             }
         });
 
-        newSocket.on('reconnect_attempt', (attemptNumber) => {
+        newSocket.on('reconnect_attempt', (attemptNumber: number) => {
             console.log('Reconnection attempt', attemptNumber);
             setConnectionStatus('reconnecting');
             setMessage(`Reconnecting... Attempt ${attemptNumber}`);
         });
 
-        newSocket.on('reconnect_error', (error) => {
+        newSocket.on('reconnect_error', (error: Error) => {
             console.error('Reconnection error:', error);
             setConnectionStatus('error');
             setMessage(`Reconnection error: ${error.message}`);
@@ -81,7 +91,7 @@ const Game = () => {
         });
 
         // Game event handlers
-        newSocket.on('gameStart', ({ gameId, symbol, opponent }) => {
+        newSocket.on('gameStart', ({ gameId, symbol, opponent }: GameStartEvent) => {
             setGameId(gameId);
             setPlayerSymbol(symbol);
             setStatus('playing');
@@ -96,7 +106,7 @@ const Game = () => {
             setIsReconnecting(false);
         });
 
-        newSocket.on('gameState', (state) => {
+        newSocket.on('gameState', (state: GameState) => {
             setGameState(state);
             setStatus('playing');
             setIsReconnecting(false);
@@ -104,7 +114,7 @@ const Game = () => {
             setMessage('Game in progress');
         });
 
-        newSocket.on('gameOver', ({ winner }) => {
+        newSocket.on('gameOver', ({ winner }: GameOverEvent) => {
             setStatus('gameOver');
             setMessage(winner === 'draw' ? "It's a draw!" : `${winner} wins!`);
             localStorage.removeItem('gameId');
@@ -118,7 +128,7 @@ const Game = () => {
             setIsReconnecting(false);
         });
 
-        newSocket.on('error', ({ message }) => {
+        newSocket.on('error', ({ message }: ErrorEvent) => {
             setMessage(message);
             if (message.includes('not found') || message.includes('no longer active')) {
                 localStorage.removeItem('gameId');
@@ -132,34 +142,34 @@ const Game = () => {
         };
     }, []);
 
-    const reconnectToGame = (savedGameId) => {
+    const reconnectToGame = (savedGameId: string): void => {
         if (socket) {
             socket.emit('rejoinGame', { gameId: savedGameId });
         }
     };
 
-    const findGame = () => {
+    const findGame = (): void => {
         setStatus('waiting');
         setMessage('Finding opponent...');
         socket?.emit('findGame');
     };
 
-    const startAIGame = (difficulty) => {
+    const startAIGame = (difficulty: AIDifficulty): void => {
         setStatus('waiting');
         setMessage('Starting AI game...');
         socket?.emit('startAIGame', { difficulty });
     };
 
-    const makeMove = (boardIndex, cellIndex) => {
+    const makeMove = (boardIndex: number, cellIndex: number): void => {
         if (!gameState || status !== 'playing') return;
         
-        const isPlayerTurn = gameState.players[gameState.currentPlayer] === socket.id;
+        const isPlayerTurn = gameState.players[gameState.currentPlayer] === socket?.id;
         if (!isPlayerTurn) return;
 
         socket?.emit('move', { gameId, boardIndex, cellIndex });
     };
 
-    const startNewGame = () => {
+    const startNewGame = (): void => {
         setStatus('idle');
         setGameState(null);
         setMessage('');

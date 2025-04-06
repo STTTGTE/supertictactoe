@@ -2,7 +2,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import Game from './components/Game';
 import './styles/App.css';
 
-function App() {
+const App: React.FC = () => {
   return (
     <Router>
       <div className="App">
@@ -13,6 +13,6 @@ function App() {
       </div>
     </Router>
   );
-}
+};
 
 export default App;
