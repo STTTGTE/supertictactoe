@@ -1,136 +1,118 @@
-.super-board {
+.game-board {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
-    gap: 10px;
+    gap: 1rem;
     max-width: 900px;
     margin: 0 auto;
-    background-color: #f0f0f0;
-    padding: 20px;
+    padding: 1rem;
+    background-color: #fff;
     border-radius: 12px;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
 }
 
-.small-board {
+.sub-board {
+    display: flex;
+    justify-content: center;
+    align-items: center;
     aspect-ratio: 1;
-    border: 2px solid #333;
+    background-color: #f8f9fa;
     border-radius: 8px;
-    padding: 5px;
-    background-color: #fff;
+    padding: 0.5rem;
     transition: all 0.3s ease;
     position: relative;
-    overflow: hidden;
 }
 
-.small-board.active {
-    border-color: #4CAF50;
-    box-shadow: 0 0 15px rgba(76, 175, 80, 0.4);
-    transform: scale(1.02);
+.sub-board.playable {
+    background-color: #e3f2fd;
+    box-shadow: 0 0 0 2px #2196f3;
 }
 
-.small-board.inactive {
-    opacity: 0.7;
-    pointer-events: none;
+.sub-board.won {
+    background-color: #f5f5f5;
 }
 
-.small-board.winner-x {
-    background-color: rgba(231, 76, 60, 0.1);
-    border-color: #e74c3c;
-}
-
-.small-board.winner-o {
-    background-color: rgba(52, 152, 219, 0.1);
-    border-color: #3498db;
-}
-
-.small-board.winner-draw {
-    background-color: rgba(149, 165, 166, 0.1);
-    border-color: #95a5a6;
-}
-
-.board-grid {
+.sub-board-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
-    grid-template-rows: repeat(3, 1fr);
-    gap: 5px;
+    gap: 0.5rem;
+    width: 100%;
     height: 100%;
 }
 
 .cell {
+    display: flex;
+    justify-content: center;
+    align-items: center;
     aspect-ratio: 1;
-    border: 1px solid #ccc;
-    background-color: #f8f8f8;
+    background-color: #fff;
+    border-radius: 4px;
     font-size: 1.5rem;
     font-weight: bold;
     cursor: pointer;
     transition: all 0.2s ease;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    position: relative;
+    border: 1px solid #e0e0e0;
 }
 
-.cell:hover:not(:disabled) {
-    background-color: #e8e8e8;
-    transform: scale(1.05);
+.cell:hover:not(.X):not(.O) {
+    background-color: #f5f5f5;
 }
 
-.cell:disabled {
+.cell.X {
+    color: #f44336;
     cursor: not-allowed;
 }
 
-.cell-x {
-    color: #e74c3c;
-}
-
-.cell-o {
-    color: #3498db;
+.cell.O {
+    color: #2196f3;
+    cursor: not-allowed;
 }
 
 .cell.last-move {
-    animation: pulse 1s ease-in-out;
+    background-color: #fff9c4;
 }
 
-.board-winner {
+.winner-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
     display: flex;
-    align-items: center;
     justify-content: center;
-    height: 100%;
-    font-size: 3rem;
+    align-items: center;
+    font-size: 4rem;
     font-weight: bold;
-    color: #2c3e50;
-    animation: fadeIn 0.5s ease-in-out;
+    background-color: rgba(255, 255, 255, 0.9);
+    border-radius: 8px;
 }
 
-@keyframes pulse {
-    0% { transform: scale(1); }
-    50% { transform: scale(1.1); }
-    100% { transform: scale(1); }
+.winner-overlay.X {
+    color: #f44336;
 }
 
-@keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
+.winner-overlay.O {
+    color: #2196f3;
 }
 
 @media (max-width: 768px) {
-    .super-board {
-        gap: 5px;
-        padding: 10px;
+    .game-board {
+        gap: 0.5rem;
+        padding: 0.5rem;
     }
 
-    .small-board {
-        padding: 2px;
+    .sub-board {
+        padding: 0.25rem;
     }
 
-    .board-grid {
-        gap: 2px;
+    .sub-board-grid {
+        gap: 0.25rem;
     }
 
     .cell {
         font-size: 1rem;
     }
 
-    .board-winner {
-        font-size: 2rem;
+    .winner-overlay {
+        font-size: 2.5rem;
     }
 } 

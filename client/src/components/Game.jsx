@@ -1,35 +1,25 @@
 import React, { useState, useEffect } from 'react';
 import { io } from 'socket.io-client';
 import Board from './Board';
-import GameControls from './GameControls';
 import '../styles/Game.css';
 
-const Game = ({ user, onSignOut }) => {
+const Game = () => {
     const [socket, setSocket] = useState(null);
     const [gameState, setGameState] = useState(null);
     const [playerSymbol, setPlayerSymbol] = useState(null);
     const [gameId, setGameId] = useState(null);
-    const [status, setStatus] = useState('idle'); // idle, waiting, playing, gameOver
+    const [status, setStatus] = useState('idle');
     const [message, setMessage] = useState('');
     const [isReconnecting, setIsReconnecting] = useState(false);
     const [connectionStatus, setConnectionStatus] = useState('disconnected');
-    const [username, setUsername] = useState(user?.user_metadata?.username || 'Guest');
 
     useEffect(() => {
-        console.log('Connecting to server:', process.env.REACT_APP_SERVER_URL);
-        const newSocket = io(process.env.REACT_APP_SERVER_URL, {
+        const newSocket = io('http://localhost:3001', {
             transports: ['websocket', 'polling'],
             reconnection: true,
             reconnectionAttempts: 5,
             reconnectionDelay: 1000,
-            timeout: 10000,
-            auth: user ? { 
-                userId: user.id,
-                username: user.user_metadata?.username || 'Guest'
-            } : { 
-                userId: 'guest',
-                username: 'Guest'
-            }
+            timeout: 10000
         });
         
         setSocket(newSocket);
@@ -138,11 +128,9 @@ const Game = ({ user, onSignOut }) => {
         });
 
         return () => {
-            if (newSocket) {
-                newSocket.disconnect();
-            }
+            newSocket.disconnect();
         };
-    }, [reconnectToGame, user]);
+    }, []);
 
     const reconnectToGame = (savedGameId) => {
         if (socket) {
@@ -182,18 +170,7 @@ const Game = ({ user, onSignOut }) => {
 
     return (
         <div className="game-container">
-            <div className="game-header">
-                <h1>Super Tic Tac Toe</h1>
-                <div className="user-info">
-                    <span className="username">{username}</span>
-                    {user && (
-                        <button className="sign-out-button" onClick={onSignOut}>
-                            Sign Out
-                        </button>
-                    )}
-                </div>
-            </div>
-            
+            <h1>Super Tic Tac Toe</h1>
             <div className={`connection-status ${connectionStatus}`}>
                 {connectionStatus === 'connected' && 'Connected'}
                 {connectionStatus === 'disconnected' && 'Disconnected'}
@@ -204,10 +181,12 @@ const Game = ({ user, onSignOut }) => {
             <div className="status-message">{message}</div>
             
             {status === 'idle' && (
-                <GameControls
-                    onFindGame={findGame}
-                    onStartAIGame={startAIGame}
-                />
+                <div className="game-controls">
+                    <button onClick={findGame}>Find Game</button>
+                    <button onClick={() => startAIGame('easy')}>Play vs Easy AI</button>
+                    <button onClick={() => startAIGame('medium')}>Play vs Medium AI</button>
+                    <button onClick={() => startAIGame('hard')}>Play vs Hard AI</button>
+                </div>
             )}
 
             {status === 'waiting' && (
