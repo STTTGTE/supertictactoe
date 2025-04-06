@@ -16,7 +16,6 @@ import {
 const Game: React.FC = () => {
     const [socket, setSocket] = useState<Socket | null>(null);
     const [gameState, setGameState] = useState<GameState | null>(null);
-    const [playerSymbol, setPlayerSymbol] = useState<PlayerSymbol | null>(null);
     const [gameId, setGameId] = useState<string | null>(null);
     const [status, setStatus] = useState<GameStatus>('idle');
     const [message, setMessage] = useState<string>('');
@@ -91,12 +90,11 @@ const Game: React.FC = () => {
         });
 
         // Game event handlers
-        newSocket.on('gameStart', ({ gameId, symbol, opponent }: GameStartEvent) => {
+        newSocket.on('gameStart', ({ gameId }: GameStartEvent) => {
             setGameId(gameId);
-            setPlayerSymbol(symbol);
             setStatus('playing');
             localStorage.setItem('gameId', gameId);
-            setMessage(`Game started! You are ${symbol}`);
+            setMessage('Game started!');
             setIsReconnecting(false);
         });
 
@@ -174,7 +172,6 @@ const Game: React.FC = () => {
         setGameState(null);
         setMessage('');
         setGameId(null);
-        setPlayerSymbol(null);
         localStorage.removeItem('gameId');
     };
 
