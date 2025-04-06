@@ -39,6 +39,7 @@ const supabaseClient = createClient(supabaseUrl, supabaseKey);
 // Game state management
 const games = new Map();
 const waitingPlayers = new Map();
+const userSockets = new Map(); // Map to track user IDs to socket IDs
 
 // AI Player class
 class AIPlayer {
@@ -50,9 +51,9 @@ class AIPlayer {
         if (this.difficulty === 'easy') {
             return this.getRandomMove(game);
         } else if (this.difficulty === 'medium') {
-            return Math.random() < 0.7 ? this.getBestMove(game) : this.getRandomMove(game);
+            return Math.random() < 0.7 ? this.getBestMove(game, lastMove) : this.getRandomMove(game);
         } else {
-            return this.getBestMove(game);
+            return this.getBestMove(game, lastMove);
         }
     }
 
@@ -81,7 +82,7 @@ class AIPlayer {
         return availableMoves[Math.floor(Math.random() * availableMoves.length)];
     }
 
-    getBestMove(game) {
+    getBestMove(game, lastMove) {
         if (game.lastMove && !game.boardWinners[game.lastMove.cellIndex]) {
             const winningMove = this.findWinningMove(game, game.lastMove.cellIndex, 'O');
             if (winningMove) return winningMove;
@@ -145,299 +146,439 @@ class AIPlayer {
     }
 }
 
-// Helper functions
-function isValidMove(game, boardIndex, cellIndex) {
-    if (game.gameOver) return false;
-    if (game.boardWinners[boardIndex]) return false;
-    if (game.board[boardIndex][cellIndex] !== '') return false;
+// Socket.io connection handling
+io.on('connection', async (socket) => {
+    console.log('New client connected:', socket.id);
     
-    if (game.lastMove) {
-        if (game.boardWinners[game.lastMove.cellIndex]) {
-            return true;
+    // Extract user information from socket auth
+    const userId = socket.handshake.auth.userId || 'guest';
+    const username = socket.handshake.auth.username || 'Guest';
+    
+    // Store the socket ID for this user
+    userSockets.set(userId, socket.id);
+    
+    // If this is a returning user, check if they have any active games
+    if (userId !== 'guest') {
+        try {
+            // Check if user has any active games in the database
+            const { data: activeGames, error } = await supabaseClient
+                .from('games')
+                .select('id, state')
+                .eq('state->>status', 'playing')
+                .eq('state->>players->>X', userId)
+                .or(`state->>players->>O.eq.${userId}`);
+            
+            if (error) {
+                console.error('Error fetching active games:', error);
+            } else if (activeGames && activeGames.length > 0) {
+                // Notify the client about active games
+                socket.emit('activeGames', activeGames);
+            }
+        } catch (error) {
+            console.error('Error checking for active games:', error);
         }
-        return boardIndex === game.lastMove.cellIndex;
     }
-    
-    return true;
-}
 
-async function makeMove(game, boardIndex, cellIndex) {
-    const playerIndex = game.currentPlayer;
-    const symbol = playerIndex === 0 ? 'X' : 'O';
-    
-    game.board[boardIndex][cellIndex] = symbol;
-    game.lastMove = { boardIndex, cellIndex };
-    
-    // Check if the current board is won
-    if (checkBoardWin(game.board[boardIndex], symbol)) {
-        game.boardWinners[boardIndex] = symbol;
+    // Handle finding a game
+    socket.on('findGame', () => {
+        console.log(`Player ${username} (${userId}) is looking for a game`);
         
-        // Check if the game is won
-        if (checkBoardWin(game.boardWinners, symbol)) {
-            game.gameOver = true;
-            game.winner = symbol;
-            io.to(game.id).emit('gameOver', { winner: symbol });
+        // Check if there's a waiting player
+        if (waitingPlayers.size > 0) {
+            const [waitingPlayerId, waitingPlayerData] = waitingPlayers.entries().next().value;
+            waitingPlayers.delete(waitingPlayerId);
+            
+            // Create a new game
+            const gameId = createGame(waitingPlayerId, socket.id, waitingPlayerData.username, username);
+            
+            // Notify both players
+            io.to(waitingPlayerId).emit('gameStart', { 
+                gameId, 
+                symbol: 'X',
+                opponent: username
+            });
+            
+            io.to(socket.id).emit('gameStart', { 
+                gameId, 
+                symbol: 'O',
+                opponent: waitingPlayerData.username
+            });
+        } else {
+            // Add this player to the waiting list
+            waitingPlayers.set(socket.id, { username, userId });
+            socket.emit('waiting');
+        }
+    });
+
+    // Handle starting an AI game
+    socket.on('startAIGame', ({ difficulty }) => {
+        console.log(`Player ${username} (${userId}) is starting an AI game with difficulty: ${difficulty}`);
+        
+        // Create a new game with AI
+        const gameId = createGameWithAI(socket.id, username, difficulty);
+        
+        // Notify the player
+        socket.emit('gameStart', { 
+            gameId, 
+            symbol: 'X',
+            opponent: 'AI'
+        });
+    });
+
+    // Handle making a move
+    socket.on('move', ({ gameId, boardIndex, cellIndex }) => {
+        const game = games.get(gameId);
+        if (!game) {
+            socket.emit('error', { message: 'Game not found' });
             return;
         }
+        
+        // Check if it's the player's turn
+        const currentPlayer = game.state.currentPlayer;
+        const playerSymbol = game.state.players[currentPlayer] === socket.id ? currentPlayer : null;
+        
+        if (!playerSymbol) {
+            socket.emit('error', { message: 'Not your turn' });
+            return;
+        }
+        
+        // Make the move
+        const moveResult = makeMove(game, boardIndex, cellIndex);
+        
+        if (moveResult.error) {
+            socket.emit('error', { message: moveResult.error });
+            return;
+        }
+        
+        // Update the game state
+        games.set(gameId, game);
+        
+        // Save the game state to the database
+        saveGameToDatabase(gameId, game.state);
+        
+        // Notify all players in the game
+        io.to(gameId).emit('gameState', game.state);
+        
+        // Check if the game is over
+        if (moveResult.gameOver) {
+            io.to(gameId).emit('gameOver', { winner: moveResult.winner });
+            
+            // Remove the game from memory
+            games.delete(gameId);
+        } else if (game.state.isAI && game.state.currentPlayer === 'O') {
+            // If it's an AI game and it's the AI's turn, make the AI move
+            setTimeout(() => {
+                const aiMove = game.aiPlayer.getMove(game.state, { boardIndex, cellIndex });
+                const aiMoveResult = makeMove(game, aiMove.boardIndex, aiMove.cellIndex);
+                
+                if (!aiMoveResult.error) {
+                    // Update the game state
+                    games.set(gameId, game);
+                    
+                    // Save the game state to the database
+                    saveGameToDatabase(gameId, game.state);
+                    
+                    // Notify all players in the game
+                    io.to(gameId).emit('gameState', game.state);
+                    
+                    // Check if the game is over
+                    if (aiMoveResult.gameOver) {
+                        io.to(gameId).emit('gameOver', { winner: aiMoveResult.winner });
+                        
+                        // Remove the game from memory
+                        games.delete(gameId);
+                    }
+                }
+            }, 1000); // Add a delay to make the AI move feel more natural
+        }
+    });
+
+    // Handle rejoining a game
+    socket.on('rejoinGame', ({ gameId }) => {
+        console.log(`Player ${username} (${userId}) is trying to rejoin game: ${gameId}`);
+        
+        // Check if the game exists
+        const game = games.get(gameId);
+        if (!game) {
+            // Check if the game exists in the database
+            supabaseClient
+                .from('games')
+                .select('state')
+                .eq('id', gameId)
+                .single()
+                .then(({ data, error }) => {
+                    if (error) {
+                        console.error('Error fetching game from database:', error);
+                        socket.emit('error', { message: 'Game not found' });
+                        return;
+                    }
+                    
+                    if (!data) {
+                        socket.emit('error', { message: 'Game not found' });
+                        return;
+                    }
+                    
+                    // Add the game back to memory
+                    games.set(gameId, { state: data.state });
+                    
+                    // Join the game room
+                    socket.join(gameId);
+                    
+                    // Send the game state to the player
+                    socket.emit('gameState', data.state);
+                    
+                    // Check if the game is over
+                    if (data.state.status === 'gameOver') {
+                        socket.emit('gameOver', { winner: data.state.winner });
+                    }
+                });
+            return;
+        }
+        
+        // Join the game room
+        socket.join(gameId);
+        
+        // Send the game state to the player
+        socket.emit('gameState', game.state);
+        
+        // Check if the game is over
+        if (game.state.status === 'gameOver') {
+            socket.emit('gameOver', { winner: game.state.winner });
+        }
+    });
+
+    // Handle disconnection
+    socket.on('disconnect', () => {
+        console.log('Client disconnected:', socket.id);
+        
+        // Remove the user from the waiting list if they were waiting
+        if (waitingPlayers.has(socket.id)) {
+            waitingPlayers.delete(socket.id);
+        }
+        
+        // Remove the user from the userSockets map
+        for (const [userId, socketId] of userSockets.entries()) {
+            if (socketId === socket.id) {
+                userSockets.delete(userId);
+                break;
+            }
+        }
+        
+        // Check if the user was in a game
+        for (const [gameId, game] of games.entries()) {
+            const playerX = game.state.players.X;
+            const playerO = game.state.players.O;
+            
+            if (playerX === socket.id || playerO === socket.id) {
+                // Notify the other player
+                const otherPlayerId = playerX === socket.id ? playerO : playerX;
+                io.to(otherPlayerId).emit('playerLeft');
+                
+                // Update the game state
+                game.state.status = 'gameOver';
+                game.state.winner = playerX === socket.id ? 'O' : 'X';
+                
+                // Save the game state to the database
+                saveGameToDatabase(gameId, game.state);
+                
+                // Remove the game from memory
+                games.delete(gameId);
+                break;
+            }
+        }
+    });
+});
+
+// Helper function to create a new game
+function createGame(playerXId, playerOId, playerXName, playerOName) {
+    const gameId = generateGameId();
+    const game = {
+        state: {
+            board: Array(9).fill().map(() => Array(9).fill(null)),
+            boardWinners: Array(9).fill(null),
+            currentPlayer: 'X',
+            lastMove: null,
+            players: {
+                X: playerXId,
+                O: playerOId
+            },
+            playerNames: {
+                X: playerXName,
+                O: playerOName
+            },
+            status: 'playing',
+            winner: null
+        }
+    };
+    
+    games.set(gameId, game);
+    
+    // Join both players to the game room
+    io.sockets.sockets.get(playerXId)?.join(gameId);
+    io.sockets.sockets.get(playerOId)?.join(gameId);
+    
+    // Save the game to the database
+    saveGameToDatabase(gameId, game.state);
+    
+    return gameId;
+}
+
+// Helper function to create a new game with AI
+function createGameWithAI(playerId, playerName, difficulty) {
+    const gameId = generateGameId();
+    const game = {
+        state: {
+            board: Array(9).fill().map(() => Array(9).fill(null)),
+            boardWinners: Array(9).fill(null),
+            currentPlayer: 'X',
+            lastMove: null,
+            players: {
+                X: playerId,
+                O: 'AI'
+            },
+            playerNames: {
+                X: playerName,
+                O: 'AI'
+            },
+            status: 'playing',
+            winner: null
+        },
+        isAI: true,
+        aiPlayer: new AIPlayer(difficulty)
+    };
+    
+    games.set(gameId, game);
+    
+    // Join the player to the game room
+    io.sockets.sockets.get(playerId)?.join(gameId);
+    
+    // Save the game to the database
+    saveGameToDatabase(gameId, game.state);
+    
+    return gameId;
+}
+
+// Helper function to make a move
+function makeMove(game, boardIndex, cellIndex) {
+    // Check if the move is valid
+    if (boardIndex < 0 || boardIndex > 8 || cellIndex < 0 || cellIndex > 8) {
+        return { error: 'Invalid move' };
     }
     
-    // Check for draw in the current board
-    if (game.board[boardIndex].every(cell => cell !== '')) {
-        game.boardWinners[boardIndex] = 'draw';
+    // Check if the cell is already occupied
+    if (game.state.board[boardIndex][cellIndex] !== null) {
+        return { error: 'Cell already occupied' };
+    }
+    
+    // Check if the board is already won
+    if (game.state.boardWinners[boardIndex] !== null) {
+        return { error: 'Board already won' };
+    }
+    
+    // Check if the player is forced to play in a specific board
+    if (game.state.lastMove !== null) {
+        const lastCellIndex = game.state.lastMove.cellIndex;
+        const forcedBoardIndex = lastCellIndex;
         
-        // Check for overall game draw
-        if (game.boardWinners.every(board => board !== '')) {
-            game.gameOver = true;
-            game.winner = 'draw';
-            io.to(game.id).emit('gameOver', { winner: 'draw' });
-            return;
+        if (game.state.boardWinners[forcedBoardIndex] === null && boardIndex !== forcedBoardIndex) {
+            return { error: 'You must play in the board indicated by the last move' };
         }
     }
     
-    game.currentPlayer = (playerIndex + 1) % 2;
-    io.to(game.id).emit('gameState', game);
+    // Make the move
+    const currentPlayer = game.state.currentPlayer;
+    game.state.board[boardIndex][cellIndex] = currentPlayer;
+    game.state.lastMove = { boardIndex, cellIndex };
     
-    // Save game state to Supabase
-    await saveGameState(game.id, game);
+    // Check if the board is won
+    const boardWinner = checkBoardWinner(game.state.board[boardIndex]);
+    if (boardWinner) {
+        game.state.boardWinners[boardIndex] = boardWinner;
+    }
+    
+    // Check if the game is won
+    const gameWinner = checkBoardWinner(game.state.boardWinners);
+    if (gameWinner) {
+        game.state.status = 'gameOver';
+        game.state.winner = gameWinner;
+        return { gameOver: true, winner: gameWinner };
+    }
+    
+    // Check if the game is a draw
+    if (isGameDraw(game.state)) {
+        game.state.status = 'gameOver';
+        game.state.winner = 'draw';
+        return { gameOver: true, winner: 'draw' };
+    }
+    
+    // Switch players
+    game.state.currentPlayer = currentPlayer === 'X' ? 'O' : 'X';
+    
+    return { gameOver: false };
 }
 
-function checkBoardWin(board, symbol) {
+// Helper function to check if a board is won
+function checkBoardWinner(board) {
     const lines = [
         [0, 1, 2], [3, 4, 5], [6, 7, 8], // rows
         [0, 3, 6], [1, 4, 7], [2, 5, 8], // columns
         [0, 4, 8], [2, 4, 6] // diagonals
     ];
     
-    return lines.some(line => 
-        line.every(index => board[index] === symbol)
-    );
+    for (const line of lines) {
+        const [a, b, c] = line;
+        if (board[a] && board[a] === board[b] && board[a] === board[c]) {
+            return board[a];
+        }
+    }
+    
+    return null;
 }
 
-async function saveGameState(gameId, gameState) {
+// Helper function to check if the game is a draw
+function isGameDraw(gameState) {
+    // Check if all boards are filled or won
+    for (let i = 0; i < 9; i++) {
+        if (gameState.boardWinners[i] === null && !gameState.board[i].includes(null)) {
+            return false;
+        }
+    }
+    
+    return true;
+}
+
+// Helper function to generate a game ID
+function generateGameId() {
+    return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+}
+
+// Helper function to save a game to the database
+async function saveGameToDatabase(gameId, gameState) {
     try {
         const { error } = await supabaseClient
             .from('games')
-            .upsert({
-                id: gameId,
-                state: gameState,
-                updated_at: new Date().toISOString()
-            });
-            
-        if (error) throw error;
+            .upsert({ id: gameId, state: gameState });
+        
+        if (error) {
+            console.error('Error saving game to database:', error);
+        }
     } catch (error) {
-        console.error('Error saving game state:', error);
+        console.error('Error saving game to database:', error);
     }
 }
 
-async function loadGameState(gameId) {
-    try {
-        const { data, error } = await supabaseClient
-            .from('games')
-            .select('state')
-            .eq('id', gameId)
-            .single();
-            
-        if (error) throw error;
-        return data?.state || null;
-    } catch (error) {
-        console.error('Error loading game state:', error);
-        return null;
-    }
+// Serve static files in production
+if (process.env.NODE_ENV === 'production') {
+    app.use(express.static(path.join(__dirname, 'client/build')));
+    
+    app.get('*', (req, res) => {
+        res.sendFile(path.join(__dirname, 'client/build', 'index.html'));
+    });
 }
-
-// Socket.IO connection handling
-io.on('connection', (socket) => {
-    console.log('New client connected:', socket.id);
-
-    socket.on('reconnectToGame', async ({ gameId }) => {
-        try {
-            const savedState = await loadGameState(gameId);
-            
-            if (!savedState) {
-                socket.emit('gameNotFound');
-                return;
-            }
-            
-            if (savedState.gameOver) {
-                socket.emit('gameNotFound');
-                return;
-            }
-            
-            if (savedState.players[1] === 'AI') {
-                savedState.ai = new AIPlayer(savedState.ai?.difficulty || 'hard');
-            }
-            
-            games.set(gameId, savedState);
-            socket.join(gameId);
-            
-            const playerIndex = savedState.players.indexOf(socket.id);
-            if (playerIndex === -1) {
-                socket.emit('gameState', { 
-                    gameState: savedState,
-                    symbol: null
-                });
-            } else {
-                socket.emit('gameState', { 
-                    gameState: savedState,
-                    symbol: playerIndex === 0 ? 'X' : 'O'
-                });
-            }
-        } catch (error) {
-            console.error('Error in reconnectToGame:', error);
-            socket.emit('gameNotFound');
-        }
-    });
-
-    socket.on('findGame', async () => {
-        const waitingPlayer = Array.from(waitingPlayers.entries())[0];
-        
-        if (waitingPlayer) {
-            const [waitingId, waitingSocket] = waitingPlayer;
-            waitingPlayers.delete(waitingId);
-            
-            const gameId = Math.random().toString(36).substring(2, 15);
-            const gameState = {
-                id: gameId,
-                players: [waitingId, socket.id],
-                currentPlayer: 0,
-                board: Array(9).fill().map(() => Array(9).fill('')),
-                boardWinners: Array(9).fill(''),
-                lastMove: null
-            };
-            
-            games.set(gameId, gameState);
-            await saveGameState(gameId, gameState);
-
-            waitingSocket.join(gameId);
-            socket.join(gameId);
-
-            io.to(waitingId).emit('gameStart', { gameId, symbol: 'X', opponent: socket.id });
-            io.to(socket.id).emit('gameStart', { gameId, symbol: 'O', opponent: waitingId });
-        } else {
-            waitingPlayers.set(socket.id, socket);
-            socket.emit('waiting');
-        }
-    });
-
-    socket.on('startAIGame', async ({ difficulty }) => {
-        const gameId = Math.random().toString(36).substring(2, 15);
-        const gameState = {
-            id: gameId,
-            players: [socket.id, 'AI'],
-            currentPlayer: 0,
-            board: Array(9).fill().map(() => Array(9).fill('')),
-            boardWinners: Array(9).fill(''),
-            lastMove: null,
-            ai: new AIPlayer(difficulty)
-        };
-        
-        games.set(gameId, gameState);
-        await saveGameState(gameId, gameState);
-
-        socket.join(gameId);
-        socket.emit('gameStart', { gameId, symbol: 'X', opponent: 'AI' });
-    });
-
-    socket.on('move', async ({ gameId, boardIndex, cellIndex }) => {
-        if (!games.has(gameId)) {
-            const savedState = await loadGameState(gameId);
-            if (savedState) {
-                if (savedState.players[1] === 'AI') {
-                    savedState.ai = new AIPlayer(savedState.ai?.difficulty || 'hard');
-                }
-                games.set(gameId, savedState);
-            }
-        }
-        
-        const game = games.get(gameId);
-        if (!game) return;
-
-        const playerIndex = game.players.indexOf(socket.id);
-        if (playerIndex === -1 || playerIndex !== game.currentPlayer) return;
-
-        if (!isValidMove(game, boardIndex, cellIndex)) return;
-
-        await makeMove(game, boardIndex, cellIndex);
-
-        if (game.players[1] === 'AI' && !game.gameOver) {
-            const aiMove = game.ai.getMove(game, game.lastMove);
-            if (aiMove) {
-                await makeMove(game, aiMove.boardIndex, aiMove.cellIndex);
-            }
-        }
-    });
-
-    socket.on('disconnect', async () => {
-        if (waitingPlayers.has(socket.id)) {
-            waitingPlayers.delete(socket.id);
-        }
-        
-        for (const [gameId, game] of games.entries()) {
-            if (game.players.includes(socket.id)) {
-                io.to(gameId).emit('playerLeft');
-                await saveGameState(gameId, game);
-                games.delete(gameId);
-            }
-        }
-    });
-
-    // Handle rejoin game request
-    socket.on('rejoinGame', ({ gameId }) => {
-        console.log(`Player attempting to rejoin game ${gameId}`);
-        
-        // Find the game in the games map
-        const game = games.get(gameId);
-        if (!game) {
-            console.log(`Game ${gameId} not found`);
-            socket.emit('error', { message: 'Game not found' });
-            return;
-        }
-
-        // Check if the game is still active
-        if (game.status !== 'active') {
-            console.log(`Game ${gameId} is no longer active`);
-            socket.emit('error', { message: 'Game is no longer active' });
-            return;
-        }
-
-        // Add the socket to the game room
-        socket.join(gameId);
-        
-        // Send the current game state to the player
-        socket.emit('gameState', {
-            gameId: game.id,
-            board: game.board,
-            currentPlayer: game.currentPlayer,
-            status: game.status,
-            winner: game.winner,
-            lastMove: game.lastMove
-        });
-
-        console.log(`Player successfully rejoined game ${gameId}`);
-    });
-});
-
-// Serve static files from the React app
-app.use(express.static(path.join(__dirname, 'client/build')));
-
-// API Routes
-app.get('/api/health', (req, res) => {
-    res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
-
-// Handle React routing, return all requests to React app
-app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, 'client/build', 'index.html'));
-});
-
-// Error handling middleware
-app.use((err, req, res, next) => {
-    console.error(err.stack);
-    res.status(500).json({ error: 'Something went wrong!' });
-});
 
 // Start the server
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
 });
+

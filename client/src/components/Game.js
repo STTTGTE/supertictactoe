@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
+import { io } from 'socket.io-client';
 import Board from './Board';
 import GameControls from './GameControls';
 import '../styles/Game.css';
 
-const Game = () => {
+const Game = ({ user, onSignOut }) => {
     const [socket, setSocket] = useState(null);
     const [gameState, setGameState] = useState(null);
     const [playerSymbol, setPlayerSymbol] = useState(null);
@@ -12,6 +13,7 @@ const Game = () => {
     const [message, setMessage] = useState('');
     const [isReconnecting, setIsReconnecting] = useState(false);
     const [connectionStatus, setConnectionStatus] = useState('disconnected');
+    const [username, setUsername] = useState(user?.user_metadata?.username || 'Guest');
 
     useEffect(() => {
         console.log('Connecting to server:', process.env.REACT_APP_SERVER_URL);
@@ -20,7 +22,14 @@ const Game = () => {
             reconnection: true,
             reconnectionAttempts: 5,
             reconnectionDelay: 1000,
-            timeout: 10000
+            timeout: 10000,
+            auth: user ? { 
+                userId: user.id,
+                username: user.user_metadata?.username || 'Guest'
+            } : { 
+                userId: 'guest',
+                username: 'Guest'
+            }
         });
         
         setSocket(newSocket);
@@ -129,9 +138,11 @@ const Game = () => {
         });
 
         return () => {
-            newSocket.disconnect();
+            if (newSocket) {
+                newSocket.disconnect();
+            }
         };
-    }, []);
+    }, [reconnectToGame, user]);
 
     const reconnectToGame = (savedGameId) => {
         if (socket) {
@@ -171,7 +182,18 @@ const Game = () => {
 
     return (
         <div className="game-container">
-            <h1>Super Tic Tac Toe</h1>
+            <div className="game-header">
+                <h1>Super Tic Tac Toe</h1>
+                <div className="user-info">
+                    <span className="username">{username}</span>
+                    {user && (
+                        <button className="sign-out-button" onClick={onSignOut}>
+                            Sign Out
+                        </button>
+                    )}
+                </div>
+            </div>
+            
             <div className={`connection-status ${connectionStatus}`}>
                 {connectionStatus === 'connected' && 'Connected'}
                 {connectionStatus === 'disconnected' && 'Disconnected'}
